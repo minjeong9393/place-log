@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="SCMJ 장소">
+  <rect width="64" height="64" rx="15" fill="#0f7a6c"/>
+  <path d="M32 51.5c0 0-13.2-13.9-13.2-23.1C18.8 20 24.7 14 32 14s13.2 6 13.2 14.4C45.2 37.6 32 51.5 32 51.5z" fill="#ffffff"/>
+  <circle cx="32" cy="28.2" r="4.6" fill="#0f7a6c"/>
+</svg>
