@@ -219,6 +219,11 @@ a{color:var(--accent-ink)}
   font-size:10.5px;font-weight:750;color:var(--gold-ink);background:var(--gold-soft);
   border-radius:999px;padding:2px 7px;letter-spacing:-.02em;max-width:60%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
 }
+.cstat{
+  font-size:10.5px;font-weight:800;color:var(--accent-ink);background:var(--accent-soft);
+  border-radius:999px;padding:2px 7px;letter-spacing:-.02em;max-width:72%;overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap;font-variant-numeric:tabular-nums;
+}
 .maplink{
   flex:0 0 auto;height:26px;padding:0 8px;border:1px solid var(--line-2);border-radius:999px;
   background:var(--surface);color:var(--text-2);font-size:10.5px;font-weight:800;
@@ -248,6 +253,10 @@ a{color:var(--accent-ink)}
 .pop b{display:block;font-size:13.5px;font-weight:850;letter-spacing:-.02em;line-height:1.3;color:var(--text)}
 .pop small{display:block;margin-top:2px;font-size:11px;font-weight:750;color:var(--text-3);letter-spacing:-.01em}
 .pop .pstars{margin-top:7px;display:flex;align-items:center;gap:6px}
+.pop .pstn{
+  margin-top:6px;padding:3px 7px;border-radius:8px;background:var(--accent-soft);color:var(--accent-ink);
+  font-size:10.5px;font-weight:800;letter-spacing:-.02em;display:inline-block;line-height:1.35;
+}
 .pop .pnote{margin:6px 0 0;font-size:12px;line-height:1.45;color:var(--text-2);font-weight:600;
   display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
 .pop .pacts{display:flex;gap:5px;margin-top:9px}
@@ -400,6 +409,13 @@ textarea.field{height:auto;padding:10px 12px;line-height:1.5;resize:vertical;min
 }
 .coordrow .sp{flex:1 1 auto;min-width:0}
 .coordrow .none{color:var(--text-3)}
+.stnline{
+  margin-top:6px;padding:8px 10px;border-radius:10px;background:var(--accent-soft);
+  color:var(--accent-ink);font-size:11.5px;font-weight:800;letter-spacing:-.02em;line-height:1.4;
+  font-variant-numeric:tabular-nums;
+}
+.stnline b{font-weight:900}
+.stnline.none{background:var(--surface-2);color:var(--text-3);font-weight:700}
 .linksrow{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap}
 .btn{
   height:40px;padding:0 14px;border:1px solid var(--line-2);border-radius:11px;background:var(--surface);
@@ -568,6 +584,8 @@ textarea.field{height:auto;padding:10px 12px;line-height:1.5;resize:vertical;min
 <div id="toast" role="status" aria-live="polite"></div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<!-- 가까운 지하철역 좌표 테이블(전국 1,316역 내장 · 네트워크 없이 즉시 계산) -->
+<script src="stations.js"></script>
 <script>
 (function () {
 /* ------------------------------------------------------------------ *
@@ -867,7 +885,7 @@ function xlBuild(book) {
  * ==================================================================== */
 'use strict';
 
-var APP_VER = '1.0.0';
+var APP_VER = '1.1.0';
 var KEY_STATE = 'place_log_state_v1';
 var KEY_SYNC = 'place_log_sync_v1';
 var KEY_ROOM = 'place_log_room_v1';
@@ -1054,11 +1072,95 @@ function placeDist(p) {
   return distM(origin.lat, origin.lng, p.lat, p.lng);
 }
 
+/* ---------------- 가까운 지하철역 ---------------- */
+/* stations.js 가 넣어 둔 [이름, 위도, 경도, 도시철도여부] 배열에서 가장 가까운 역을 찾는다.
+   네트워크·API 없이 메모리에서 바로 계산하고, 같은 좌표는 캐시해서 다시 계산하지 않는다. */
+var STATIONS = (window.PLACE_STATIONS && window.PLACE_STATIONS.length) ? window.PLACE_STATIONS : [];
+var stationCache = {};
+var stationNameIndex = null;
+function nearestStation(lat, lng) {
+  if (lat == null || lng == null || !STATIONS.length) return null;
+  var key = lat + ',' + lng;
+  if (stationCache[key] !== undefined) return stationCache[key];
+  var best = null, bestD = Infinity;
+  for (var i = 0; i < STATIONS.length; i++) {
+    var s = STATIONS[i];
+    /* 0.12°(약 13km) 밖은 후보에서 빼고 본다 — 그보다 먼 역은 표시하지 않는다 */
+    if (Math.abs(s[1] - lat) > 0.12 || Math.abs(s[2] - lng) > 0.16) continue;
+    var d = distM(lat, lng, s[1], s[2]);
+    if (d < bestD) { bestD = d; best = s; }
+  }
+  var out = best ? { name: best[0], dist: bestD, metro: best[3] === 1 } : null;
+  stationCache[key] = out;
+  return out;
+}
+function stationOf(p) {
+  if (!p || p.lat == null || p.lng == null) return null;
+  return nearestStation(p.lat, p.lng);
+}
+function walkMin(m) { return Math.max(1, Math.round(m / 78)); }
+/* 카드용 짧은 배지: 🚇 진천역 320m (3km 넘으면 숨김) */
+function stationBadge(st) {
+  if (!st || st.dist > 3000) return '';
+  return (st.metro ? '\uD83D\uDE87' : '\uD83D\uDE89') + ' ' + st.name + '역 ' + fmtDist(st.dist);
+}
+/* 상세·지도 팝업용: 진천역 · 도보 약 4분 (320m) */
+function stationLine(st) {
+  if (!st || st.dist > 5000) return '';
+  return st.name + '역 · ' + (st.dist <= 2000
+    ? '도보 약 ' + walkMin(st.dist) + '분 (' + fmtDist(st.dist) + ')'
+    : fmtDist(st.dist));
+}
+function stationFormHtml(lat, lng) {
+  var st = (lat == null || lng == null) ? null : nearestStation(lat, lng);
+  if (!st || st.dist > 5000) {
+    return { cls: 'stnline none', html: '\uD83D\uDE87 가까운 지하철역 — 주소를 정하면 함께 찾아 드려요' };
+  }
+  return {
+    cls: 'stnline',
+    html: (st.metro ? '\uD83D\uDE87' : '\uD83D\uDE89') + ' 가까운 역 <b>' + esc(st.name) + '역</b> · ' +
+      esc(st.dist <= 2000 ? '도보 약 ' + walkMin(st.dist) + '분 (' + fmtDist(st.dist) + ')' : fmtDist(st.dist))
+  };
+}
+function setStationInfo(lat, lng) {
+  var box = el('fStation');
+  if (!box) return;
+  var v = stationFormHtml(lat, lng);
+  box.className = v.cls;
+  box.innerHTML = v.html;
+}
+/* 검색어가 역 이름이면 그 역 주변 장소도 찾는다 (예: "진천역" → 진천역 1.2km 안 장소) */
+function normStationQ(s) {
+  return String(s == null ? '' : s).replace(/\s+/g, '').replace(/역$/, '').toLowerCase();
+}
+function stationQueryPoints(q) {
+  var k = normStationQ(q);
+  if (!k || k.length < 2 || !STATIONS.length) return null;
+  if (!stationNameIndex) {
+    stationNameIndex = {};
+    for (var i = 0; i < STATIONS.length; i++) {
+      var key = normStationQ(STATIONS[i][0]);
+      (stationNameIndex[key] || (stationNameIndex[key] = [])).push(STATIONS[i]);
+    }
+  }
+  return stationNameIndex[k] || null;
+}
+
 /* ---------------- 목록·필터 ---------------- */
 function matchesQuery(p, q) {
   if (!q) return true;
-  var s = (p.name + ' ' + p.addr + ' ' + p.memo + ' ' + p.review + ' ' + p.menu + ' ' + catOf(p.cat).name).toLowerCase();
-  return s.indexOf(q.toLowerCase()) >= 0;
+  var st = stationOf(p);
+  var s = (p.name + ' ' + p.addr + ' ' + p.memo + ' ' + p.review + ' ' + p.menu + ' ' + catOf(p.cat).name +
+    (st ? ' ' + st.name + '역 ' + st.name : '')).toLowerCase();
+  if (s.indexOf(q.toLowerCase()) >= 0) return true;
+  /* 역 이름으로 찾으면 그 역에서 걸어갈 만한(1.2km) 장소도 함께 보여 준다 */
+  var pts = stationQueryPoints(q);
+  if (pts && p.lat != null && p.lng != null) {
+    for (var i = 0; i < pts.length; i++) {
+      if (distM(p.lat, p.lng, pts[i][1], pts[i][2]) <= 1200) return true;
+    }
+  }
+  return false;
 }
 function filtered() {
   var q = (el('q') && el('q').value || '').trim();
@@ -1145,6 +1247,10 @@ function cardHtml(p) {
       (note ? '<span class="cnote">' + esc(note) + '</span>' : '') +
       '<span class="cfoot">' +
         (p.rating ? starsHtml(p.rating) : '') +
+        (function () {
+          var sb = stationBadge(stationOf(p));
+          return sb ? '<span class="cstat">' + esc(sb) + '</span>' : '';
+        })() +
         (p.status === 'done' && p.visitedAt ? '<span class="cdate">' + fmtDateDot(p.visitedAt) + ' 방문</span>' : '') +
         (p.menu ? '<span class="cmenu">' + esc(p.menu) + '</span>' : '') +
         (p.lat != null ? '<button type="button" class="maplink" data-map="' + esc(p.id) + '">🗺 지도</button>' : '') +
@@ -1206,6 +1312,10 @@ function popupHtml(p) {
     '<div class="phead"><span class="pthumb" style="--soft:' + k.soft + '">' + k.emoji + '</span>' +
       '<div><b>' + esc(p.name) + '</b><small>' + k.name + ' · ' + statusName(p.status) +
       (d != null ? ' · ' + fmtDist(d) : '') + '</small></div></div>' +
+    (function () {
+      var sl = stationLine(stationOf(p));
+      return sl ? '<div class="pstn">\uD83D\uDE87 ' + esc(sl) + '</div>' : '';
+    })() +
     (p.rating ? '<div class="pstars">' + starsHtml(p.rating) + '<small style="margin:0">' + p.rating + '</small></div>' : '') +
     (note ? '<p class="pnote">' + esc(note) + '</p>' : '') +
     '<div class="pacts"><button type="button" class="pri" data-act="detail" data-id="' + esc(p.id) + '">상세</button>' +
@@ -1458,6 +1568,7 @@ function openForm(p, opts) {
       '<button type="button" class="btn sm" id="btnPick">🗺 지도에서 찍기</button>' +
       (d.lat != null ? '<button type="button" class="btn sm" id="btnCoordClear">지우기</button>' : '') +
     '</div>' +
+    '<div class="stnline none" id="fStation"></div>' +
     '<div class="linksrow">' +
       '<a class="btn sm" id="lnNaver" href="' + esc(naverLink(d)) + '" target="_blank" rel="noopener">네이버지도 열기</a>' +
       '<a class="btn sm" id="lnKakao" href="' + esc(kakaoLink(d)) + '" target="_blank" rel="noopener">카카오맵 열기</a>' +
@@ -1478,6 +1589,7 @@ function openForm(p, opts) {
     '<button type="button" class="btn" data-close="1">취소</button>' +
     '<button type="button" class="btn primary" id="btnSave">저장</button>';
   openSheet(isEdit ? '장소 수정' : '장소 담기', body, foot);
+  setStationInfo(d.lat, d.lng);
 
   var root = el('sheetroot');
   var draft = d;
@@ -1547,6 +1659,7 @@ function openForm(p, opts) {
     draft.lat = null; draft.lng = null;
     formLat = null; formLng = null;
     el('fCoord').innerHTML = coordText(null, null);
+    setStationInfo(null, null);
     this.remove();
     syncLinks();
   });
@@ -1671,6 +1784,7 @@ function doSearch() {
         var lat = Number(r.lat), lng = Number(r.lon);
         formLat = lat; formLng = lng;
         if (el('fCoord')) el('fCoord').innerHTML = coordText(lat, lng);
+        setStationInfo(lat, lng);
         if (el('fAddr')) el('fAddr').value = r.display_name || q;
         var nameEl = el('fName');
         if (nameEl && !nameEl.value.trim()) {
@@ -1735,6 +1849,7 @@ function openAbout() {
     '<div class="roombox"><span class="sp">버전</span><b>v' + APP_VER + '</b></div>' +
     '<p class="hint" style="margin-top:10px">담은 곳 <b>' + c.all + '</b> · 가보기 전 <b>' + c.want + '</b> · 가본 곳 <b>' + c.done + '</b></p>' +
     '<p class="hint">기록은 이 기기 브라우저(localStorage)에 저장되고, 남편과 연동하면 방 코드를 아는 기기끼리 실시간으로 함께 봐요. 지도는 OpenStreetMap, 장소 검색은 Nominatim 을 씁니다.</p>' +
+    '<p class="hint">장소마다 가장 가까운 지하철역과 거리를 앱에 내장한 전국 역 좌표(' + (STATIONS.length ? STATIONS.length.toLocaleString('ko-KR') + '곳' : '—') + ', OpenStreetMap·Wikidata)로 계산해 보여 줘요. 인터넷 없이도 바로 나오고, 검색창에 역 이름(예: 진천역)을 넣으면 그 역 근처 장소를 찾아 줘요.</p>' +
     '<p class="hint">홈 화면에 추가하면 앱처럼 열려요. (안드로이드 크롬: ⋮ → 홈 화면에 추가)</p>';
   openSheet('앱 정보', body, '<span class="grow"></span><button type="button" class="btn primary" data-close="1">닫기</button>');
 }
@@ -1769,7 +1884,7 @@ function stamp() {
 function exportXlsx() {
   var list = filtered();
   if (!list.length) { toast('내보낼 목록이 없어요'); closeSheet(); return; }
-  var head = ['상태', '장소명', '카테고리', '별점', '방문일', '추천 메뉴', '후기', '메모', '주소', '위도', '경도', '거리(m)', '지도', '등록일'];
+  var head = ['상태', '장소명', '카테고리', '별점', '방문일', '추천 메뉴', '후기', '메모', '주소', '가까운 역', '위도', '경도', '거리(m)', '지도', '등록일'];
   var rows = [head.map(function (h) { return { v: h, s: 3 }; })];
   var S = { num: 1, head: 3, dec: 6, note: 5 };
   list.forEach(function (p) {
@@ -1778,6 +1893,7 @@ function exportXlsx() {
       statusName(p.status), p.name, catOf(p.cat).name,
       p.rating ? { v: p.rating, s: S.dec } : '',
       p.visitedAt || '', p.menu || '', p.review || '', p.memo || '', p.addr || '',
+      stationLine(stationOf(p)) || '',
       p.lat != null ? { v: Number(p.lat.toFixed(6)), s: 0 } : '',
       p.lng != null ? { v: Number(p.lng.toFixed(6)), s: 0 } : '',
       d != null ? { v: Math.round(d), s: S.num } : '',
@@ -1801,7 +1917,7 @@ function exportXlsx() {
   var bytes = xlBuild({
     title: 'SCMJ 장소',
     sheets: [
-      { name: '가볼곳', cols: [9, 24, 12, 7, 11, 18, 34, 30, 34, 11, 11, 10, 30, 11], rows: rows, filter: true },
+      { name: '가볼곳', cols: [9, 24, 12, 7, 11, 18, 34, 30, 34, 22, 11, 11, 10, 30, 11], rows: rows, filter: true },
       { name: '카테고리 요약', cols: [14, 12, 12, 10, 12], rows: sum }
     ]
   });
