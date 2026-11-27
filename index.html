@@ -401,7 +401,10 @@ textarea.field{height:auto;padding:10px 12px;line-height:1.5;resize:vertical;min
   font-size:12.5px;font-weight:700;color:var(--text-2);line-height:1.35;
 }
 .results button:hover{background:var(--surface-2);border-color:var(--line-2)}
-.results .none{padding:8px 2px;font-size:12px;font-weight:700;color:var(--text-3)}
+.results button b{display:block;font-size:13px;font-weight:850;color:var(--text);letter-spacing:-.02em}
+.results button .sub{display:block;margin-top:1px;font-size:11.5px;font-weight:650;color:var(--text-3);letter-spacing:-.01em}.results .none{padding:8px 2px;font-size:12px;font-weight:700;color:var(--text-3);line-height:1.45}
+.addrrow{display:flex;align-items:center;gap:7px;margin-top:6px;flex-wrap:wrap}
+.addrhelp{flex:1 1 130px;min-width:0;font-size:11px;font-weight:700;color:var(--text-3);line-height:1.4;letter-spacing:-.01em}
 .coordrow{
   display:flex;align-items:center;gap:8px;margin-top:8px;padding:8px 10px;
   background:var(--surface-2);border-radius:10px;font-size:11.5px;font-weight:750;color:var(--text-2);
@@ -471,6 +474,40 @@ textarea.field{height:auto;padding:10px 12px;line-height:1.5;resize:vertical;min
 .syncstate[data-status="offline"] .d{background:var(--want)}
 .syncstate[data-status="sync"]{background:var(--gold-soft);color:var(--gold-ink)}
 .syncstate[data-status="sync"] .d{background:var(--gold)}
+
+/* ---------- 주소 찾기(카카오·다음 우편번호) ---------- */
+#pcLayer{position:fixed;inset:0;z-index:1400}
+#pcLayer[hidden]{display:none}
+#pcLayer .pcov{position:absolute;inset:0;background:rgba(10,22,19,.5);animation:fade .16s ease}
+.pcpanel{
+  position:absolute;inset:0;display:flex;flex-direction:column;background:var(--surface);
+  animation:up .2s cubic-bezier(.22,.8,.24,1);
+}
+.pchead{
+  display:flex;align-items:center;gap:8px;flex:0 0 auto;
+  padding:calc(10px + env(safe-area-inset-top)) 14px 10px;border-bottom:1px solid var(--line);
+}
+.pchead b{font-size:15px;font-weight:850;letter-spacing:-.02em}
+.pchead .xbtn{
+  margin-left:auto;width:32px;height:32px;border:0;border-radius:50%;background:var(--surface-2);
+  color:var(--text-2);font-size:14px;line-height:1;display:grid;place-items:center;flex:0 0 auto;
+}
+#pcEmbed{position:relative;flex:1 1 auto;min-height:280px;overflow:hidden;background:var(--surface-2)}
+#pcEmbed iframe{position:absolute;inset:0;width:100% !important;height:100% !important;border:0;display:block}
+#pcEmbed .pcmsg{
+  position:absolute;inset:0;display:flex;align-items:center;justify-content:center;text-align:center;
+  padding:24px;font-size:12.5px;font-weight:700;color:var(--text-2);line-height:1.6;
+}
+.pcfoot{flex:0 0 auto;padding:9px 14px calc(11px + env(safe-area-inset-bottom));border-top:1px solid var(--line);font-size:11px;font-weight:700;line-height:1.45;color:var(--text-3);letter-spacing:-.01em}
+@media (min-width:900px){
+  .pcpanel{
+    inset:auto;left:50%;top:50%;transform:translate(-50%,-50%);
+    width:min(560px,92vw);height:min(720px,88vh);border-radius:18px;overflow:hidden;
+    box-shadow:0 26px 70px -22px rgba(10,22,19,.55);animation:none;
+  }
+  .pchead{padding:14px 18px 11px}
+  .pcfoot{padding:10px 18px 12px}
+}
 
 /* 토스트 */
 #toast{
@@ -581,6 +618,15 @@ textarea.field{height:auto;padding:10px 12px;line-height:1.5;resize:vertical;min
   </main>
 </div>
 <div id="sheetroot"></div>
+<!-- 주소 찾기 — 카카오(다음) 우편번호 서비스를 앱 안 레이어로 띄웁니다(팝업 차단 없음) -->
+<div id="pcLayer" hidden>
+  <div class="pcov" data-pcclose="1"></div>
+  <div class="pcpanel" role="dialog" aria-modal="true" aria-label="주소 찾기">
+    <div class="pchead"><b>주소 찾기</b><button type="button" class="xbtn" data-pcclose="1" aria-label="주소 찾기 닫기">✕</button></div>
+    <div id="pcEmbed"></div>
+    <div class="pcfoot" id="pcFoot">도로명·지번 주소나 건물명으로 찾아 고르면 주소·좌표·가까운 지하철역이 채워져요.</div>
+  </div>
+</div>
 <div id="toast" role="status" aria-live="polite"></div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -885,7 +931,7 @@ function xlBuild(book) {
  * ==================================================================== */
 'use strict';
 
-var APP_VER = '1.1.0';
+var APP_VER = '1.2.0';
 var KEY_STATE = 'place_log_state_v1';
 var KEY_SYNC = 'place_log_sync_v1';
 var KEY_ROOM = 'place_log_room_v1';
@@ -977,9 +1023,11 @@ function normPlace(raw) {
   if (!name) return null;
   var cat = CATMAP[raw.cat] ? raw.cat : 'etc';
   var status = raw.status === 'done' ? 'done' : 'want';
-  var lat = num(raw.lat), lng = num(raw.lng);
-  if (lat != null && (lat < -90 || lat > 90)) lat = null;
-  if (lng != null && (lng < -180 || lng > 180)) lng = null;
+  var lat = (raw.lat == null || raw.lat === '') ? null : num(raw.lat);
+  var lng = (raw.lng == null || raw.lng === '') ? null : num(raw.lng);
+  if (lat == null || lng == null) { lat = null; lng = null; }   // Number(null)=0 으로 아프리카 앞바다에 핀이 찍히던 문제
+  if (lat != null && (lat < -90 || lat > 90)) { lat = null; lng = null; }
+  if (lng != null && (lng < -180 || lng > 180)) { lat = null; lng = null; }
   return {
     id: String(raw.id || uid()),
     name: name.slice(0, 80),
@@ -1484,15 +1532,231 @@ function handlePick(lat, lng) {
   endPick();
   openForm(draft, { reverse: true });
 }
+/* ---------------- 주소(한국식) ---------------- */
+/* Nominatim 주소 조각을 한국식 순서로 이어 붙인다: 시/도 · 시/군/구 · 도로명 번지 (도로명이 없으면 동).
+   원래 display_name 은 '진천로16길, 진천동, 달서구, 대구광역시, 42784, 대한민국' 처럼 뒤집혀 있어
+   그대로 쓰면 카드·폼에서 읽기 불편하다. */
+function addrPick(a, keys) {
+  for (var i = 0; i < keys.length; i++) {
+    if (!keys[i]) continue;
+    var v = a[keys[i]];
+    if (v != null && String(v).trim()) return String(v).trim();
+  }
+  return '';
+}
+function isDongLike(s) { return /(동|읍|면|리|가)$/.test(String(s || '')); }
+function isGuLike(s) { return /(구|군)$/.test(String(s || '')); }
+function koreanAddress(o) {
+  if (!o) return '';
+  var a = o.address || {};
+  var province = addrPick(a, ['province', 'state', 'region']);
+  var city = addrPick(a, ['city', 'municipality', 'town']);
+  var county = addrPick(a, ['county']);
+  var district = addrPick(a, ['borough']);
+  if (!district) { var cd = addrPick(a, ['city_district', 'district']); if (isGuLike(cd)) district = cd; }
+  var dong = addrPick(a, ['quarter', 'neighbourhood', 'village', 'hamlet', 'suburb']);
+  if (!dong) { var cd2 = addrPick(a, ['city_district', 'district']); if (isDongLike(cd2)) dong = cd2; }
+  var road = addrPick(a, ['road', 'pedestrian', 'footway']);
+  var no = addrPick(a, ['house_number']);
+  var out = [];
+  function add(v) { if (v && out.indexOf(v) < 0) out.push(v); }
+  add(province); add(city); add(county); add(district);
+  if (road) { add(road); add(no); } else { add(dong); }
+  if (out.length) return out.join(' ');
+  /* address 상세가 없을 때: display_name 에서 국가·우편번호를 빼고 뒤집는다 */
+  var parts = String(o.display_name || o.name || '').split(',')
+    .map(function (s) { return s.trim(); })
+    .filter(function (s) { return s && s !== '대한민국' && s !== 'South Korea' && !/^\d{5}$/.test(s); });
+  return parts.reverse().join(' ');
+}
+/* 검색 결과의 이름(상호·건물·역 이름) */
+function poiName(r) {
+  var nm = String((r && r.name) || '').trim();
+  if (nm) return nm;
+  return String((r && r.display_name) || '').split(',')[0].trim();
+}
+/* Nominatim 은 브라우저 UA 로 호출한다(키 없음). 실패는 던져서 호출 쪽이 안내한다. */
+function nominatimJson(url) {
+  return fetch(url, { headers: { 'Accept': 'application/json' } }).then(function (r) {
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    return r.json();
+  });
+}
 function reverseGeocode(lat, lng, cb) {
-  var url = 'https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=' + lat + '&lon=' + lng + '&accept-language=ko';
-  fetch(url, { headers: { 'Accept': 'application/json' } }).then(function (r) { return r.json(); }).then(function (o) {
-    cb(o && o.display_name ? String(o.display_name) : '');
+  var url = 'https://nominatim.openstreetmap.org/reverse?format=jsonv2&addressdetails=1&zoom=18&accept-language=ko&lat=' + lat + '&lon=' + lng;
+  nominatimJson(url).then(function (o) {
+    if (!o) return cb('');
+    var kr = !o.address || !o.address.country_code || String(o.address.country_code).toLowerCase() === 'kr';
+    cb(kr ? (koreanAddress(o) || String(o.display_name || '')) : String(o.display_name || ''));
   }).catch(function () { cb(''); });
+}
+/* 도로명 주소 → 좌표. 집번지까지 못 찾으면 번지를 빼고 도로명으로 한 번 더 찾는다. */
+function geocodeOnce(q, cb) {
+  var url = 'https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&addressdetails=1&countrycodes=kr&accept-language=ko&q=' + encodeURIComponent(q);
+  nominatimJson(url).then(function (rows) {
+    var r = (rows && rows.length) ? rows[0] : null;
+    var lat = r ? Number(r.lat) : NaN, lng = r ? Number(r.lon) : NaN;
+    if (!r || !isFinite(lat) || !isFinite(lng)) return cb(null);
+    cb({ lat: lat, lng: lng, addr: koreanAddress(r) || q, name: poiName(r) });
+  }).catch(function () { cb(null); });
+}
+function geocodeAddress(addr, cb) {
+  var base = String(addr || '').replace(/\([^)]*\)/g, ' ').replace(/\s+/g, ' ').trim();
+  if (!base) return cb(null);
+  geocodeOnce(base, function (hit) {
+    if (hit) return cb(hit);
+    var parts = base.split(' ');
+    if (parts.length > 2 && /^\d/.test(parts[parts.length - 1])) {
+      return geocodeOnce(parts.slice(0, -1).join(' '), cb);
+    }
+    cb(null);
+  });
+}
+
+/* ---------------- 주소 찾기 (카카오·다음 우편번호) ---------------- */
+/* 팝업 대신 앱 안 레이어(#pcLayer)에 embed 해서 모바일 팝업 차단을 피한다.
+   스크립트는 버튼을 처음 누를 때 한 번만 받아 오고, 실패하면 직접 입력으로 안내한다. */
+/* 2026-11-30 t1.daumcdn.net 종료 공지가 떠 있어 kakaocdn 을 먼저 쓰고, 실패하면 옛 주소로 한 번 더 시도한다. */
+var PC_SRCS = [
+  'https://t1.kakaocdn.net/mapjsapi/bundle/postcode/prod/postcode.v2.js',
+  'https://t1.daumcdn.net/mapjsapi/bundle/postcode/prod/postcode.v2.js'
+];
+var pcBoot = { loading: false, cbs: [] };
+var formSyncLinks = null;
+
+function pcMsg(html) {
+  var box = el('pcEmbed');
+  if (box) box.innerHTML = '<div class="pcmsg">' + html + '</div>';
+}
+/* 레이어를 닫을 때 iframe 을 지우지 않는다 — 우편번호 스크립트가 주소 선택 직후
+   자기 레이어를 정리하는 중이라 먼저 지우면 removeChild 오류가 난다.
+   다음에 열 때 mountPostcode 가 비우고 새로 embed 한다. */
+function closePostcode() {
+  var layer = el('pcLayer');
+  if (!layer || layer.hidden) return;
+  layer.hidden = true;
+  document.body.classList.remove('pc-open');
+}
+function loadPostcode(cb) {
+  if (window.daum && window.daum.Postcode) return cb(true);
+  pcBoot.cbs.push(cb);
+  if (pcBoot.loading) return;
+  pcBoot.loading = true;
+  function done(ok) {
+    pcBoot.loading = false;
+    var list = pcBoot.cbs.splice(0);
+    for (var i = 0; i < list.length; i++) list[i](ok);
+  }
+  function tryAt(i) {
+    if (window.daum && window.daum.Postcode) return done(true);
+    if (i >= PC_SRCS.length) return done(false);
+    var s = document.createElement('script');
+    s.src = PC_SRCS[i];
+    s.async = true;
+    s.charset = 'utf-8';
+    s.onload = function () {
+      if (window.daum && window.daum.Postcode) done(true);
+      else tryAt(i + 1);
+    };
+    s.onerror = function () { tryAt(i + 1); };
+    document.head.appendChild(s);
+  }
+  tryAt(0);
+}
+function openPostcode() {
+  var layer = el('pcLayer');
+  if (!layer) return;
+  layer.hidden = false;
+  document.body.classList.add('pc-open');
+  if (window.daum && window.daum.Postcode) { mountPostcode(); return; }
+  pcMsg('주소 찾기를 불러오는 중…');
+  loadPostcode(function (ok) {
+    var l2 = el('pcLayer');
+    if (!l2 || l2.hidden) return;
+    if (!ok) {
+      pcMsg('주소 찾기를 불러오지 못했어요.<br>인터넷 연결을 확인하거나, 주소를 직접 입력하고 <b>🗺 지도에서 찍기</b>로 위치를 정해 주세요.');
+      return;
+    }
+    mountPostcode();
+  });
+}
+function mountPostcode() {
+  var box = el('pcEmbed');
+  if (!box) return;
+  box.innerHTML = '';
+  try {
+    new window.daum.Postcode({
+      width: '100%',
+      height: '100%',
+      maxSuggestItems: 8,
+      oncomplete: function (data) {
+        var road = String(data.roadAddress || '').trim();
+        var jibun = String(data.jibunAddress || data.autoJibunAddress || '').trim();
+        var addr = (data.userSelectedType === 'J' && jibun ? jibun : (road || jibun || String(data.address || '').trim()));
+        closePostcode();
+        if (!addr) return;
+        /* 도로명 주소를 그대로 쓴다(예: 대구 달서구 진천로16길 26) — 영문·국가 없는 한국식 표기 */
+        applyAddressResult(addr, road || jibun || addr);
+      }
+    }).embed(box);
+  } catch (e) {
+    pcMsg('주소 찾기를 열지 못했어요. 주소를 직접 입력하고 <b>🗺 지도에서 찍기</b>로 위치를 정해 주세요.');
+  }
+}
+/* 주소를 폼에 넣고 좌표·가까운 역을 채운다. 좌표는 Nominatim 으로 찾는다. */
+function applyAddressResult(addr, query) {
+  var addrInput = el('fAddr');
+  if (!addrInput) return;
+  addrInput.value = addr;
+  if (formSyncLinks) formSyncLinks();
+  var box = el('searchResults');
+  if (box) box.innerHTML = '<div class="none">주소를 넣었어요 — 좌표를 찾는 중…</div>';
+  geocodeAddress(query || addr, function (hit) {
+    var now = el('fAddr');
+    if (!now || now.value.trim() !== addr) return;   // 폼이 닫혔거나 주소를 바꿈
+    var b = el('searchResults');
+    if (!hit) {
+      if (b) b.innerHTML = '<div class="none">주소는 넣었어요. 좌표를 못 찾으면 <b>🗺 지도에서 찍기</b>로 위치를 정해 주세요.</div>';
+      return;
+    }
+    setFormPoint(hit.lat, hit.lng);
+    if (b) b.innerHTML = '<div class="none">주소·좌표를 넣었어요</div>';
+    if (map && mapReady) map.setView([hit.lat, hit.lng], 16);
+  });
+}
+function ensureCoordClear() {
+  var row = el('sheetroot') ? el('sheetroot').querySelector('.coordrow') : null;
+  if (!row || el('btnCoordClear')) return;
+  var b = document.createElement('button');
+  b.type = 'button';
+  b.className = 'btn sm';
+  b.id = 'btnCoordClear';
+  b.textContent = '지우기';
+  b.addEventListener('click', function () { clearFormPoint(); });
+  row.appendChild(b);
+}
+function clearFormPoint() {
+  formLat = null;
+  formLng = null;
+  if (el('fCoord')) el('fCoord').innerHTML = coordText(null, null);
+  setStationInfo(null, null);
+  var b = el('btnCoordClear');
+  if (b) b.remove();
+  if (formSyncLinks) formSyncLinks();
+}
+function setFormPoint(lat, lng) {
+  formLat = lat;
+  formLng = lng;
+  if (el('fCoord')) el('fCoord').innerHTML = coordText(lat, lng);
+  setStationInfo(lat, lng);
+  ensureCoordClear();
+  if (formSyncLinks) formSyncLinks();
 }
 
 /* ---------------- 시트 ---------------- */
 function closeSheet() {
+  closePostcode();
+  formSyncLinks = null;
   el('sheetroot').innerHTML = '';
   document.body.classList.remove('sheet-open');
 }
@@ -1561,8 +1825,10 @@ function openForm(p, opts) {
       '<button type="button" data-st="done" aria-pressed="' + (d.status === 'done') + '">가본 곳</button>' +
     '</div>' +
     '<div class="flabel">주소·위치 <span class="opt">(선택)</span></div>' +
-    '<div class="searchrow2"><input class="field" id="fAddr" type="text" autocomplete="off" placeholder="주소나 장소 이름으로 검색" value="' + esc(d.addr) + '">' +
-      '<button type="button" class="btn" id="btnSearch">검색</button></div>' +
+    '<div class="searchrow2"><input class="field" id="fAddr" type="text" autocomplete="off" placeholder="도로명 주소나 상호명" value="' + esc(d.addr) + '">' +
+      '<button type="button" class="btn primary" id="btnPostcode">📮 주소 찾기</button></div>' +
+    '<div class="addrrow"><button type="button" class="btn sm" id="btnSearch">🔎 이름·주소로 검색</button>' +
+      '<span class="addrhelp">상호명·역 이름은 검색, 정확한 주소는 주소 찾기</span></div>' +
     '<div class="results" id="searchResults"></div>' +
     '<div class="coordrow"><span class="sp" id="fCoord">' + coordText(d.lat, d.lng) + '</span>' +
       '<button type="button" class="btn sm" id="btnPick">🗺 지도에서 찍기</button>' +
@@ -1601,6 +1867,7 @@ function openForm(p, opts) {
     if (nv) nv.href = naverLink(tmp);
     if (kk) kk.href = kakaoLink(tmp);
   }
+  formSyncLinks = syncLinks;
   el('fName').addEventListener('input', syncLinks);
   el('fAddr').addEventListener('input', syncLinks);
 
@@ -1646,6 +1913,7 @@ function openForm(p, opts) {
   }
   bindStars();
 
+  el('btnPostcode').addEventListener('click', function () { openPostcode(); });
   el('btnSearch').addEventListener('click', function () { doSearch(); });
   el('fAddr').addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); doSearch(); } });
   el('btnPick').addEventListener('click', function () {
@@ -1657,11 +1925,7 @@ function openForm(p, opts) {
   var cc = el('btnCoordClear');
   if (cc) cc.addEventListener('click', function () {
     draft.lat = null; draft.lng = null;
-    formLat = null; formLng = null;
-    el('fCoord').innerHTML = coordText(null, null);
-    setStationInfo(null, null);
-    this.remove();
-    syncLinks();
+    clearFormPoint();
   });
   el('btnSave').addEventListener('click', function () { saveForm(); });
   var del = el('btnDel');
@@ -1766,37 +2030,37 @@ function doSearch() {
   var box = el('searchResults');
   if (!q) { box.innerHTML = '<div class="none">주소나 장소 이름을 넣어 주세요</div>'; return; }
   box.innerHTML = '<div class="none">찾는 중…</div>';
-  var url = 'https://nominatim.openstreetmap.org/search?format=jsonv2&limit=5&accept-language=ko&q=' + encodeURIComponent(q);
-  fetch(url, { headers: { 'Accept': 'application/json' } }).then(function (r) {
-    if (!r.ok) throw new Error('HTTP ' + r.status);
-    return r.json();
-  }).then(function (rows) {
+  /* 국내 우선 · 한국어 결과 · 한국식 순서로 보여 준다 */
+  var url = 'https://nominatim.openstreetmap.org/search?format=jsonv2&limit=6&addressdetails=1&dedupe=1&countrycodes=kr&accept-language=ko&q=' + encodeURIComponent(q);
+  nominatimJson(url).then(function (rows) {
     if (!Array.isArray(rows) || !rows.length) {
-      box.innerHTML = '<div class="none">검색 결과가 없어요 — 지도에서 직접 찍어 주세요</div>';
+      box.innerHTML = '<div class="none">국내 검색 결과가 없어요.<br>정확한 주소는 <b>📮 주소 찾기</b>로 찾거나, <b>🗺 지도에서 찍기</b>로 위치를 정해 주세요.</div>';
       return;
     }
     box.innerHTML = rows.map(function (r, i) {
-      return '<button type="button" data-i="' + i + '">' + esc(r.display_name || r.name || '이름 없음') + '</button>';
+      var ad = koreanAddress(r);
+      var nm = poiName(r);
+      var html = (nm && ad.indexOf(nm) < 0)
+        ? '<b>' + esc(nm) + '</b><span class="sub">' + esc(ad) + '</span>'
+        : '<b>' + esc(ad || nm || '이름 없음') + '</b>';
+      return '<button type="button" data-i="' + i + '">' + html + '</button>';
     }).join('');
     box.querySelectorAll('button[data-i]').forEach(function (b) {
       b.addEventListener('click', function () {
         var r = rows[Number(b.getAttribute('data-i'))];
         var lat = Number(r.lat), lng = Number(r.lon);
-        formLat = lat; formLng = lng;
-        if (el('fCoord')) el('fCoord').innerHTML = coordText(lat, lng);
-        setStationInfo(lat, lng);
-        if (el('fAddr')) el('fAddr').value = r.display_name || q;
+        var ad = koreanAddress(r) || String(r.display_name || '');
+        var nm = poiName(r);
+        if (el('fAddr')) el('fAddr').value = ad;
         var nameEl = el('fName');
-        if (nameEl && !nameEl.value.trim()) {
-          var nm = String(r.name || (r.display_name || '').split(',')[0] || '').trim();
-          if (nm) nameEl.value = nm;
-        }
-        box.innerHTML = '<div class="none">위치를 정했어요: ' + esc((r.display_name || '').slice(0, 60)) + '</div>';
+        if (nameEl && !nameEl.value.trim() && nm && nm !== ad) nameEl.value = nm;
+        setFormPoint(lat, lng);
+        box.innerHTML = '<div class="none">위치를 정했어요 · ' + esc(ad) + '</div>';
         if (map && mapReady) map.setView([lat, lng], 16);
       });
     });
   }).catch(function () {
-    box.innerHTML = '<div class="none">검색을 못 했어요(인터넷 확인) — 지도에서 직접 찍어 주세요</div>';
+    box.innerHTML = '<div class="none">검색을 못 했어요(인터넷 확인).<br>주소를 직접 넣거나 <b>🗺 지도에서 찍기</b>로 위치를 정해 주세요.</div>';
   });
 }
 
@@ -1848,7 +2112,7 @@ function openAbout() {
   var body = '<p class="hint">부부가 같이 가볼 곳을 담고, 가본 곳은 별점·후기로 남기는 지도 앱이에요. 광고·추적 없이 만들었어요.</p>' +
     '<div class="roombox"><span class="sp">버전</span><b>v' + APP_VER + '</b></div>' +
     '<p class="hint" style="margin-top:10px">담은 곳 <b>' + c.all + '</b> · 가보기 전 <b>' + c.want + '</b> · 가본 곳 <b>' + c.done + '</b></p>' +
-    '<p class="hint">기록은 이 기기 브라우저(localStorage)에 저장되고, 남편과 연동하면 방 코드를 아는 기기끼리 실시간으로 함께 봐요. 지도는 OpenStreetMap, 장소 검색은 Nominatim 을 씁니다.</p>' +
+    '<p class="hint">기록은 이 기기 브라우저(localStorage)에 저장되고, 남편과 연동하면 방 코드를 아는 기기끼리 실시간으로 함께 봐요. 지도는 OpenStreetMap, 장소 검색은 Nominatim(한국어), 도로명 주소 찾기는 카카오(다음) 우편번호 서비스를 씁니다.</p>' +
     '<p class="hint">장소마다 가장 가까운 지하철역과 거리를 앱에 내장한 전국 역 좌표(' + (STATIONS.length ? STATIONS.length.toLocaleString('ko-KR') + '곳' : '—') + ', OpenStreetMap·Wikidata)로 계산해 보여 줘요. 인터넷 없이도 바로 나오고, 검색창에 역 이름(예: 진천역)을 넣으면 그 역 근처 장소를 찾아 줘요.</p>' +
     '<p class="hint">홈 화면에 추가하면 앱처럼 열려요. (안드로이드 크롬: ⋮ → 홈 화면에 추가)</p>';
   openSheet('앱 정보', body, '<span class="grow"></span><button type="button" class="btn primary" data-close="1">닫기</button>');
@@ -2496,6 +2760,7 @@ function wire() {
   document.addEventListener('click', function (e) {
     var t = e.target;
     if (!t || !t.closest) return;
+    if (t.closest('[data-pcclose]')) { closePostcode(); return; }
     if (t.closest('[data-overlay]')) { closeSheet(); return; }
     if (t.closest('[data-close]')) { e.preventDefault(); closeSheet(); return; }
     var detail = t.closest('[data-act="detail"]');
@@ -2503,6 +2768,8 @@ function wire() {
   });
   document.addEventListener('keydown', function (e) {
     if (e.key === 'Escape') {
+      var pcl = el('pcLayer');
+      if (pcl && !pcl.hidden) { closePostcode(); return; }
       if (ui.pick) { endPick(); return; }
       if (el('sheetroot').innerHTML) closeSheet();
     }
@@ -2552,7 +2819,8 @@ function boot() {
       }).catch(function () { });
     }
   } catch (e) { }
-  window.__PLACE_LOG = { state: state, prefs: prefs, origin: origin, distM: distM, filtered: filtered, getMap: function () { return map; }, version: APP_VER };
+  window.__PLACE_LOG = { state: state, prefs: prefs, origin: origin, distM: distM, filtered: filtered, getMap: function () { return map; }, version: APP_VER,
+    koreanAddress: koreanAddress, poiName: poiName, geocodeAddress: geocodeAddress };
 }
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
 else boot();

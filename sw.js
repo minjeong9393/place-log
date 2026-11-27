@@ -2,7 +2,7 @@
  * 장소 기록은 브라우저 저장소(localStorage)와 남편과의 방(Firebase)에만 있고 여기에는 저장하지 않습니다.
  * 화면(HTML)·매니페스트는 네트워크 우선이라 새 버전이 바로 반영되고,
  * 지도 타일(OpenStreetMap)은 캐시하지 않고 그대로 네트워크로 보냅니다. */
-var CACHE = 'place-log-v2';
+var CACHE = 'place-log-v3';
 var CDN = 'place-log-cdn-v1';
 var ASSETS = ['./', './index.html', './stations.js', './manifest.json', './favicon.ico', './icon-192.png', './icon-512.png', './apple-touch-icon.png'];
 
